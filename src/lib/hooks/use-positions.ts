@@ -2,26 +2,102 @@
 
 import { useSuiClient, useCurrentAccount } from "@mysten/dapp-kit";
 import { useQuery } from "@tanstack/react-query";
-import { PROTOCOLS } from "../protocols/constants";
+import { createNaviClient, type NaviPosition } from "../protocols/navi-client";
+import { createScallopClient, type ScallopPosition } from "../protocols/scallop-client";
+import { PROTOCOLS, type ProtocolKey } from "../protocols/constants";
 
+/**
+ * Unified position interface for cross-protocol display
+ */
 export interface ProtocolPosition {
-    protocol: keyof typeof PROTOCOLS;
-    asset: {
-        symbol: string;
-        coinType: string;
-        amount: string;
-        amountRaw: bigint;
-        decimals: number;
-    };
-    apy: number;
-    valueUsd: string;
+    id: string;
+    protocol: ProtocolKey;
+    protocolName: string;
+    protocolColor: string;
+    protocolLogo: string;
+    coin: string;
+    coinType: string;
+    supplied: bigint;
+    suppliedFormatted: string;
+    suppliedUsd: number;
+    borrowed: bigint;
+    borrowedFormatted: string;
+    borrowedUsd: number;
+    supplyApy: number;
+    borrowApy: number;
+    decimals: number;
+    netValue: number;
 }
 
 /**
- * Fetch user's positions across supported protocols
+ * Format a bigint amount to a human-readable string
+ */
+function formatAmount(amount: bigint, decimals: number): string {
+    const value = Number(amount) / Math.pow(10, decimals);
+    if (value === 0) return "0.00";
+    if (value < 0.01) return "<0.01";
+    return value.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: decimals > 6 ? 4 : 2,
+    });
+}
+
+/**
+ * Convert Navi position to unified format
+ */
+function naviToUnified(position: NaviPosition): ProtocolPosition {
+    return {
+        id: `navi-${position.coin}`,
+        protocol: "NAVI",
+        protocolName: PROTOCOLS.NAVI.name,
+        protocolColor: PROTOCOLS.NAVI.color,
+        protocolLogo: PROTOCOLS.NAVI.logo,
+        coin: position.coin,
+        coinType: position.coinType,
+        supplied: position.supplied,
+        suppliedFormatted: formatAmount(position.supplied, position.decimals),
+        suppliedUsd: position.suppliedUsd,
+        borrowed: position.borrowed,
+        borrowedFormatted: formatAmount(position.borrowed, position.decimals),
+        borrowedUsd: position.borrowedUsd,
+        supplyApy: position.supplyApy,
+        borrowApy: position.borrowApy,
+        decimals: position.decimals,
+        netValue: position.suppliedUsd - position.borrowedUsd,
+    };
+}
+
+/**
+ * Convert Scallop position to unified format
+ */
+function scallopToUnified(position: ScallopPosition): ProtocolPosition {
+    return {
+        id: `scallop-${position.coin}`,
+        protocol: "SCALLOP",
+        protocolName: PROTOCOLS.SCALLOP.name,
+        protocolColor: PROTOCOLS.SCALLOP.color,
+        protocolLogo: PROTOCOLS.SCALLOP.logo,
+        coin: position.coin,
+        coinType: position.coinType,
+        supplied: position.supplied,
+        suppliedFormatted: formatAmount(position.supplied, position.decimals),
+        suppliedUsd: position.suppliedUsd,
+        borrowed: position.borrowed,
+        borrowedFormatted: formatAmount(position.borrowed, position.decimals),
+        borrowedUsd: position.borrowedUsd,
+        supplyApy: position.supplyApy,
+        borrowApy: position.borrowApy,
+        decimals: position.decimals,
+        netValue: position.suppliedUsd - position.borrowedUsd,
+    };
+}
+
+/**
+ * Fetch user's positions across all supported protocols
+ * Returns unified position data from Navi and Scallop
  */
 export function useUserPositions() {
-    const client = useSuiClient();
+    const suiClient = useSuiClient();
     const account = useCurrentAccount();
 
     return useQuery({
@@ -29,92 +105,112 @@ export function useUserPositions() {
         queryFn: async (): Promise<ProtocolPosition[]> => {
             if (!account?.address) return [];
 
-            // Fetch all owned objects
-            const objects = await client.getOwnedObjects({
-                owner: account.address,
-                options: {
-                    showContent: true,
-                    showType: true,
-                },
-            });
-
             const positions: ProtocolPosition[] = [];
 
-            // Parse objects to find protocol-specific position tokens
-            for (const obj of objects.data) {
-                const type = obj.data?.type;
-                if (!type) continue;
+            // Create protocol clients
+            const naviClient = createNaviClient(suiClient, "mainnet");
+            const scallopClient = createScallopClient(suiClient);
 
-                // Check for Navi receipt tokens (simplified detection)
-                if (type.includes("navi") || type.includes("lending")) {
-                    // In real implementation, decode the object content
-                    // For now, create mock position
-                    positions.push({
-                        protocol: "NAVI",
-                        asset: {
-                            symbol: "SUI",
-                            coinType: "0x2::sui::SUI",
-                            amount: "100.00",
-                            amountRaw: 100_000_000_000n,
-                            decimals: 9,
-                        },
-                        apy: 2.5,
-                        valueUsd: "$120.00",
-                    });
-                }
+            // Fetch positions from both protocols in parallel
+            const [naviPositions, scallopPositions] = await Promise.allSettled([
+                naviClient.getUserPositions(account.address),
+                scallopClient.getUserPositions(account.address),
+            ]);
 
-                // Check for Scallop market coins
-                if (type.includes("scallop") || type.includes("sCoin")) {
-                    positions.push({
-                        protocol: "SCALLOP",
-                        asset: {
-                            symbol: "USDC",
-                            coinType: "0x5d4b302506645c37ff133b98c4b50a5ae14841659738d6d733d59d0d217a93bf::coin::COIN",
-                            amount: "500.00",
-                            amountRaw: 500_000_000n,
-                            decimals: 6,
-                        },
-                        apy: 3.8,
-                        valueUsd: "$500.00",
-                    });
+            // Process Navi positions
+            if (naviPositions.status === "fulfilled") {
+                for (const pos of naviPositions.value) {
+                    if (pos.supplied > 0n || pos.borrowed > 0n) {
+                        positions.push(naviToUnified(pos));
+                    }
                 }
+            } else {
+                console.warn("Failed to fetch Navi positions:", naviPositions.reason);
             }
+
+            // Process Scallop positions
+            if (scallopPositions.status === "fulfilled") {
+                for (const pos of scallopPositions.value) {
+                    if (pos.supplied > 0n || pos.borrowed > 0n) {
+                        positions.push(scallopToUnified(pos));
+                    }
+                }
+            } else {
+                console.warn("Failed to fetch Scallop positions:", scallopPositions.reason);
+            }
+
+            // Sort by USD value (highest first)
+            positions.sort((a, b) => b.netValue - a.netValue);
 
             return positions;
         },
         enabled: !!account?.address,
         staleTime: 30_000, // Refresh every 30 seconds
+        refetchOnWindowFocus: true,
     });
 }
 
 /**
- * Hook to get target protocol options with APY data
+ * Hook to get positions for a specific protocol
  */
-export function useTargetProtocols(sourceProtocol: keyof typeof PROTOCOLS) {
-    return useQuery({
-        queryKey: ["target-protocols", sourceProtocol],
-        queryFn: async () => {
-            // In real implementation, fetch live APY data from protocols
-            const targets = [];
+export function useProtocolPositions(protocol: ProtocolKey) {
+    const { data: allPositions, ...rest } = useUserPositions();
 
-            if (sourceProtocol === "NAVI") {
-                targets.push(
-                    { protocol: "SCALLOP" as const, apy: 3.8 },
-                    { protocol: "MAGMA" as const, apy: 15.0 },
-                );
-            } else if (sourceProtocol === "SCALLOP") {
-                targets.push(
-                    { protocol: "NAVI" as const, apy: 2.5 },
-                    { protocol: "MAGMA" as const, apy: 15.0 },
-                );
-            }
+    return {
+        ...rest,
+        data: allPositions?.filter(p => p.protocol === protocol) ?? [],
+    };
+}
 
-            return targets.map(t => ({
-                ...PROTOCOLS[t.protocol],
-                key: t.protocol,
-                apy: t.apy,
-            }));
-        },
-        staleTime: 60_000,
-    });
+/**
+ * Hook to calculate total portfolio value
+ */
+export function useTotalPortfolioValue() {
+    const { data: positions, isLoading, error } = useUserPositions();
+
+    const totals = positions?.reduce(
+        (acc, pos) => ({
+            totalSupplied: acc.totalSupplied + pos.suppliedUsd,
+            totalBorrowed: acc.totalBorrowed + pos.borrowedUsd,
+            netValue: acc.netValue + pos.netValue,
+        }),
+        { totalSupplied: 0, totalBorrowed: 0, netValue: 0 }
+    ) ?? { totalSupplied: 0, totalBorrowed: 0, netValue: 0 };
+
+    return {
+        ...totals,
+        isLoading,
+        error,
+    };
+}
+
+/**
+ * Hook to get migration opportunities
+ * Finds positions that could earn higher APY on another protocol
+ */
+export function useMigrationOpportunities() {
+    const { data: positions, isLoading, error } = useUserPositions();
+
+    const opportunities = positions
+        ?.filter(pos => pos.supplied > 0n)
+        .map(pos => {
+            // Find the same coin on the other protocol
+            const targetProtocol = pos.protocol === "NAVI" ? "SCALLOP" : "NAVI";
+
+            // This would need real APY data from the target protocol
+            // For now, we return the position with potential migration info
+            return {
+                ...pos,
+                targetProtocol,
+                targetProtocolName: PROTOCOLS[targetProtocol].name,
+                targetProtocolColor: PROTOCOLS[targetProtocol].color,
+                route: `${pos.protocol.toLowerCase()}-to-${targetProtocol.toLowerCase()}` as const,
+            };
+        }) ?? [];
+
+    return {
+        data: opportunities,
+        isLoading,
+        error,
+    };
 }
