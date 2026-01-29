@@ -12,40 +12,36 @@ export function Header() {
             animate={{ y: 0 }}
             transition={{ type: "spring", stiffness: 100 }}
         >
-            <div className="glass-card mx-4 mt-4 px-6 py-4">
+            <div className="glass-card mx-4 mt-4 px-6 py-3">
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
                     {/* Logo */}
-                    <Link href="/" className="flex items-center gap-3">
-                        <motion.span
-                            className="text-3xl"
-                            animate={{ rotate: [0, -10, 10, 0] }}
-                            transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-                        >
-                            🦬
-                        </motion.span>
+                    <Link href="/" className="flex items-center gap-2">
+                        <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
+                            <span className="text-white text-lg font-bold">P</span>
+                        </div>
                         <div>
-                            <h1 className="text-xl font-bold gradient-text">Porta</h1>
-                            <p className="text-xs text-foreground/40">The Great Migration</p>
+                            <h1 className="text-lg font-bold text-foreground">Porta</h1>
+                            <p className="text-xs text-text-muted -mt-0.5">DeFi Migration</p>
                         </div>
                     </Link>
 
                     {/* Navigation */}
-                    <nav className="hidden md:flex items-center gap-6">
+                    <nav className="hidden md:flex items-center gap-1">
                         <Link
                             href="/"
-                            className="text-sm text-foreground/70 hover:text-foreground transition-colors"
+                            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-primary hover:bg-primary-light rounded-lg transition-all"
                         >
                             Dashboard
                         </Link>
                         <Link
                             href="/migrate"
-                            className="text-sm text-foreground/70 hover:text-foreground transition-colors"
+                            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-primary hover:bg-primary-light rounded-lg transition-all"
                         >
                             Migrate
                         </Link>
                         <Link
                             href="/history"
-                            className="text-sm text-foreground/70 hover:text-foreground transition-colors"
+                            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-primary hover:bg-primary-light rounded-lg transition-all"
                         >
                             History
                         </Link>
