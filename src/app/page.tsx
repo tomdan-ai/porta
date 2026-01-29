@@ -2,125 +2,178 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-kit";
+import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from "@mysten/dapp-kit";
 import { Header } from "@/components/layout/header";
 import { MigrationCard } from "@/components/ui/migration-card";
 import { GasCalculator } from "@/components/ui/gas-calculator";
-import { YetiAnimation } from "@/components/ui/yeti-animation";
 import { PROTOCOLS } from "@/lib/protocols/constants";
-import { MigrationBuilder } from "@/lib/transaction-builder/migration-builder";
+import { createMigrationBuilder, type MigrationRoute } from "@/lib/transaction-builder/migration-builder";
+import { useUserPositions, useMigrationOpportunities, type ProtocolPosition } from "@/lib/hooks/use-positions";
+import { useProtocolApys } from "@/lib/hooks/use-protocol-apys";
 
-// Demo positions for showcase
-const DEMO_POSITIONS = [
-  {
-    source: PROTOCOLS.NAVI,
-    target: PROTOCOLS.SCALLOP,
-    asset: { symbol: "SUI", amount: "100.00", valueUsd: "$120.00" },
-    sourceApy: 2.5,
-    targetApy: 3.8,
-    route: "navi-to-scallop" as const,
-  },
-  {
-    source: PROTOCOLS.NAVI,
-    target: PROTOCOLS.MAGMA,
-    asset: { symbol: "SUI", amount: "250.00", valueUsd: "$300.00" },
-    sourceApy: 2.5,
-    targetApy: 15.0,
-    route: "navi-to-magma" as const,
-  },
-  {
-    source: PROTOCOLS.SCALLOP,
-    target: PROTOCOLS.NAVI,
-    asset: { symbol: "USDC", amount: "500.00", valueUsd: "$500.00" },
-    sourceApy: 3.2,
-    targetApy: 4.1,
-    route: "scallop-to-navi" as const,
-  },
-];
+// Loading skeleton for migration cards
+function MigrationCardSkeleton() {
+  return (
+    <div className="card p-5 w-full max-w-sm">
+      <div className="flex items-center gap-2 mb-5">
+        <div className="w-10 h-10 rounded-xl skeleton" />
+        <div className="w-6 h-6 skeleton rounded-full" />
+        <div className="w-10 h-10 rounded-xl skeleton" />
+        <div className="ml-auto w-20 h-6 skeleton rounded-full" />
+      </div>
+      <div className="bg-surface-elevated rounded-xl p-4 mb-5">
+        <div className="h-4 skeleton rounded mb-3 w-3/4" />
+        <div className="h-4 skeleton rounded mb-3 w-1/2" />
+        <div className="h-4 skeleton rounded w-2/3" />
+      </div>
+      <div className="h-12 skeleton rounded-xl" />
+    </div>
+  );
+}
+
+// Empty state when user has no positions
+function EmptyState() {
+  return (
+    <motion.div
+      className="text-center py-16"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary-light flex items-center justify-center">
+        <span className="text-4xl">📊</span>
+      </div>
+      <h3 className="text-xl font-bold text-foreground mb-2">No Positions Found</h3>
+      <p className="text-text-secondary max-w-md mx-auto mb-8">
+        You don&apos;t have any positions in Navi or Scallop yet.
+        Start by depositing assets to see migration opportunities.
+      </p>
+      <div className="flex justify-center gap-3">
+        <a
+          href="https://naviprotocol.io"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn-secondary"
+        >
+          Open Navi →
+        </a>
+        <a
+          href="https://scallop.io"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn-secondary"
+        >
+          Open Scallop →
+        </a>
+      </div>
+    </motion.div>
+  );
+}
+
+// Error state
+function ErrorState({ message }: { message: string }) {
+  return (
+    <motion.div
+      className="text-center py-16"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-error-light flex items-center justify-center">
+        <span className="text-4xl">⚠️</span>
+      </div>
+      <h3 className="text-xl font-bold text-foreground mb-2">Unable to Load Positions</h3>
+      <p className="text-text-secondary max-w-md mx-auto">{message}</p>
+    </motion.div>
+  );
+}
 
 export default function Dashboard() {
   const account = useCurrentAccount();
+  const suiClient = useSuiClient();
   const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [animatingRoute, setAnimatingRoute] = useState<{ source: string, target: string } | null>(null);
-  const [isMigrating, setIsMigrating] = useState<number | null>(null);
 
-  const handleMigrate = async (index: number, route: string) => {
+  // Real data hooks
+  const { data: positions, isLoading: positionsLoading, error: positionsError } = useUserPositions();
+  const { data: apyData } = useProtocolApys();
+
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isMigrating, setIsMigrating] = useState<string | null>(null);
+
+  const handleMigrate = async (position: ProtocolPosition, targetProtocol: string) => {
     if (!account) {
       alert("Please connect your wallet first!");
       return;
     }
 
-    setIsMigrating(index);
-    const position = DEMO_POSITIONS[index];
+    const positionId = position.id;
+    setIsMigrating(positionId);
 
     try {
-      // Build the migration transaction
-      const builder = new MigrationBuilder();
-      const tx = builder.build({
-        amount: 100_000_000_000n, // 100 SUI
-        coinType: "0x2::sui::SUI",
-        route: route as "navi-to-scallop" | "scallop-to-navi" | "navi-to-magma",
+      const route = `${position.protocol.toLowerCase()}-to-${targetProtocol.toLowerCase()}` as MigrationRoute;
+
+      const builder = createMigrationBuilder(suiClient);
+      const tx = await builder.build({
+        amount: position.supplied,
+        coin: position.coin,
+        coinType: position.coinType,
+        route,
+        senderAddress: account.address,
       });
 
-      // Show Yeti animation
-      setAnimatingRoute({ source: position.source.name, target: position.target.name });
-      setIsAnimating(true);
-
-      // Sign and execute
       await signAndExecute({
         transaction: tx,
       });
-
     } catch (error) {
       console.error("Migration failed:", error);
+      alert(`Migration failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsMigrating(null);
     }
   };
 
+  const getApy = (protocol: string, coin: string): number => {
+    if (!apyData) return 0;
+    const protocolData = apyData.byProtocol.find(p => p.protocol === protocol);
+    const coinData = protocolData?.coins.find(c => c.coin.toUpperCase() === coin.toUpperCase());
+    return coinData?.supplyApy ?? 0;
+  };
+
+  const getTargetProtocol = (sourceProtocol: string): keyof typeof PROTOCOLS => {
+    return sourceProtocol === "NAVI" ? "SCALLOP" : "NAVI";
+  };
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background">
       <Header />
 
-      {/* Yeti Animation Overlay */}
-      <YetiAnimation
-        isAnimating={isAnimating}
-        sourceProtocol={animatingRoute?.source || ""}
-        targetProtocol={animatingRoute?.target || ""}
-        onComplete={() => setIsAnimating(false)}
-      />
-
       {/* Hero Section */}
-      <section className="pt-32 pb-16 px-4">
+      <section className="pt-28 pb-12 px-4 hero-gradient">
         <div className="max-w-4xl mx-auto text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-6"
+            className="mb-4"
           >
-            <span className="inline-block px-4 py-2 rounded-full bg-primary/20 text-primary text-sm font-medium mb-4">
-              ✨ Powered by Sui PTBs
+            <span className="badge badge-primary">
+              ⚡ Powered by Sui
             </span>
           </motion.div>
 
           <motion.h1
-            className="text-5xl md:text-6xl font-bold mb-6"
+            className="text-4xl md:text-5xl font-bold text-foreground mb-4"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            The <span className="gradient-text">Inter-Protocol Highway</span>
+            Move DeFi Positions <span className="gradient-text">Instantly</span>
           </motion.h1>
 
           <motion.p
-            className="text-xl text-foreground/60 mb-8 max-w-2xl mx-auto"
+            className="text-lg text-text-secondary mb-8 max-w-xl mx-auto"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            Move your DeFi positions between protocols with one click.
-            Save gas, save time, maximize yields.
+            Migrate between protocols in one click. No manual withdrawals, no waiting.
           </motion.p>
 
           {!account && (
@@ -128,11 +181,10 @@ export default function Dashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="flex justify-center gap-4"
             >
-              <div className="glass-card p-4 text-center">
-                <p className="text-sm text-foreground/60 mb-2">
-                  👆 Connect your wallet to view your positions
+              <div className="card inline-block p-4">
+                <p className="text-sm text-text-secondary">
+                  👆 Connect your wallet to get started
                 </p>
               </div>
             </motion.div>
@@ -141,46 +193,90 @@ export default function Dashboard() {
       </section>
 
       {/* Migration Cards Grid */}
-      <section className="py-16 px-4">
-        <div className="max-w-6xl mx-auto">
+      <section className="py-12 px-4">
+        <div className="max-w-5xl mx-auto">
           <motion.h2
-            className="text-2xl font-bold mb-8 text-center"
+            className="text-xl font-bold mb-6 text-center text-foreground"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            {account ? "Your Migration Opportunities" : "Available Routes"}
+            {account ? "Your Migration Opportunities" : "Connect Wallet to View Positions"}
           </motion.h2>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center">
-            {DEMO_POSITIONS.map((position, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <MigrationCard
-                  sourceProtocol={position.source}
-                  targetProtocol={position.target}
-                  asset={position.asset}
-                  sourceApy={position.sourceApy}
-                  targetApy={position.targetApy}
-                  onMigrate={() => handleMigrate(index, position.route)}
-                  isLoading={isMigrating === index}
-                />
-              </motion.div>
-            ))}
-          </div>
+          {/* Loading State */}
+          {account && positionsLoading && (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 justify-items-center">
+              {[1, 2, 3].map((i) => (
+                <MigrationCardSkeleton key={i} />
+              ))}
+            </div>
+          )}
+
+          {/* Error State */}
+          {account && positionsError && (
+            <ErrorState message={positionsError.message} />
+          )}
+
+          {/* Empty State */}
+          {account && !positionsLoading && !positionsError && positions?.length === 0 && (
+            <EmptyState />
+          )}
+
+          {/* Positions Grid */}
+          {account && !positionsLoading && positions && positions.length > 0 && (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 justify-items-center">
+              {positions.filter(p => p.supplied > 0n).map((position, index) => {
+                const targetProtocol = getTargetProtocol(position.protocol);
+                const sourceApy = position.supplyApy;
+                const targetApy = getApy(targetProtocol, position.coin);
+
+                return (
+                  <motion.div
+                    key={position.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                  >
+                    <MigrationCard
+                      sourceProtocol={PROTOCOLS[position.protocol]}
+                      targetProtocol={PROTOCOLS[targetProtocol]}
+                      asset={{
+                        symbol: position.coin,
+                        amount: position.suppliedFormatted,
+                        valueUsd: `$${position.suppliedUsd.toFixed(2)}`,
+                      }}
+                      sourceApy={sourceApy}
+                      targetApy={targetApy}
+                      onMigrate={() => handleMigrate(position, targetProtocol)}
+                      isLoading={isMigrating === position.id}
+                    />
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Not Connected State */}
+          {!account && (
+            <div className="text-center py-16">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary-light flex items-center justify-center">
+                <span className="text-4xl">🔗</span>
+              </div>
+              <p className="text-text-secondary">
+                Connect your wallet to see your DeFi positions
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* Gas Calculator Section */}
-      <section className="py-16 px-4 bg-surface/30">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-8 items-center">
+      {/* Why Sui Section */}
+      <section className="py-16 px-4 section-alt">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
               <motion.h2
-                className="text-3xl font-bold mb-4"
+                className="text-2xl font-bold mb-4 text-foreground"
                 initial={{ opacity: 0, x: -20 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
@@ -188,15 +284,14 @@ export default function Dashboard() {
                 Why Sui?
               </motion.h2>
               <motion.p
-                className="text-foreground/60 mb-6"
+                className="text-text-secondary mb-6"
                 initial={{ opacity: 0, x: -20 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: 0.1 }}
               >
-                Sui&apos;s Programmable Transaction Blocks let us chain multiple
-                protocol interactions into a single atomic transaction.
-                One signature, multiple moves.
+                Programmable Transaction Blocks enable atomic, multi-step operations
+                in a single transaction.
               </motion.p>
               <motion.ul
                 className="space-y-3"
@@ -206,13 +301,16 @@ export default function Dashboard() {
                 transition={{ delay: 0.2 }}
               >
                 {[
-                  "🔗 Atomic execution - all or nothing",
-                  "⚡ Sub-second finality",
-                  "💰 Gas costs under $0.01",
-                  "🛡️ No intermediate state risks",
+                  { icon: "🔗", text: "Atomic execution" },
+                  { icon: "⚡", text: "Sub-second finality" },
+                  { icon: "💰", text: "Gas under $0.01" },
+                  { icon: "🛡️", text: "No intermediate risks" },
                 ].map((feature, i) => (
-                  <li key={i} className="flex items-center gap-2 text-foreground/80">
-                    {feature}
+                  <li key={i} className="flex items-center gap-3 text-foreground">
+                    <span className="w-8 h-8 rounded-lg bg-primary-light flex items-center justify-center text-sm">
+                      {feature.icon}
+                    </span>
+                    {feature.text}
                   </li>
                 ))}
               </motion.ul>
@@ -230,10 +328,9 @@ export default function Dashboard() {
       </section>
 
       {/* Footer */}
-      <footer className="py-8 px-4 text-center text-foreground/40 text-sm">
-        <p>
-          Built with 💜 for the Sui Hackathon | Powered by{" "}
-          <span className="gradient-text font-medium">Programmable Transaction Blocks</span>
+      <footer className="py-8 px-4 text-center border-t border-surface-border">
+        <p className="text-sm text-text-muted">
+          Built for Sui · Powered by <span className="text-primary font-medium">PTBs</span>
         </p>
       </footer>
     </div>
