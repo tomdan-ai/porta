@@ -10,20 +10,19 @@ export function WalletButton() {
     if (currentAccount) {
         return (
             <motion.div
-                className="flex items-center gap-3"
+                className="flex items-center gap-2"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
             >
-                <div className="glass-card py-2 px-4 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                    <span className="font-mono text-sm">
+                <div className="py-2 px-3 rounded-lg bg-surface-elevated border border-surface-border flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-success" />
+                    <span className="font-mono text-sm text-foreground">
                         {currentAccount.address.slice(0, 6)}...{currentAccount.address.slice(-4)}
                     </span>
                 </div>
                 <motion.button
                     onClick={() => disconnect()}
-                    className="py-2 px-4 rounded-xl bg-surface hover:bg-surface-elevated 
-                     border border-surface-border transition-colors text-sm"
+                    className="py-2 px-3 rounded-lg text-sm text-text-secondary hover:text-foreground hover:bg-surface-elevated transition-all"
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                 >
@@ -35,11 +34,8 @@ export function WalletButton() {
 
     return (
         <ConnectButton
-            connectText="🔗 Connect Wallet"
-            className="!py-3 !px-6 !rounded-xl !font-bold 
-                 !bg-gradient-to-r !from-primary !to-secondary
-                 !border-none !text-white hover:!opacity-90
-                 !transition-opacity"
+            connectText="Connect Wallet"
+            className="!btn-primary !text-sm !py-2.5 !px-5"
         />
     );
 }
