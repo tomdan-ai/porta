@@ -40,78 +40,79 @@ export function MigrationCard({
 
     return (
         <motion.div
-            className="glass-card p-6 w-full max-w-md"
+            className="card p-5 w-full max-w-sm"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            whileHover={{ scale: 1.02 }}
+            whileHover={{ y: -4 }}
             onHoverStart={() => setIsHovered(true)}
             onHoverEnd={() => setIsHovered(false)}
         >
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
+            {/* Migration Route */}
+            <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                    {/* Source */}
                     <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold"
-                        style={{ backgroundColor: sourceProtocol.color + "30", color: sourceProtocol.color }}
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shadow-sm"
+                        style={{ backgroundColor: sourceProtocol.color }}
                     >
                         {sourceProtocol.name.charAt(0)}
                     </div>
 
+                    {/* Arrow */}
                     <motion.div
-                        animate={{ x: isHovered ? [0, 5, 0] : 0 }}
-                        transition={{ repeat: isHovered ? Infinity : 0, duration: 1 }}
-                        className="text-2xl text-primary"
+                        animate={{ x: isHovered ? [0, 4, 0] : 0 }}
+                        transition={{ repeat: isHovered ? Infinity : 0, duration: 0.8 }}
+                        className="text-primary text-lg px-1"
                     >
                         →
                     </motion.div>
 
+                    {/* Target */}
                     <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold"
-                        style={{ backgroundColor: targetProtocol.color + "30", color: targetProtocol.color }}
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shadow-sm"
+                        style={{ backgroundColor: targetProtocol.color }}
                     >
                         {targetProtocol.name.charAt(0)}
                     </div>
                 </div>
 
-                <div className={`px-3 py-1 rounded-full text-sm font-medium ${isPositiveGain
-                        ? "bg-success/20 text-success"
-                        : "bg-error/20 text-error"
-                    }`}>
-                    {isPositiveGain ? "+" : ""}{apyDifference.toFixed(2)}% APY
-                </div>
+                {/* APY Badge */}
+                <span className={`badge ${isPositiveGain ? "badge-success" : "badge-error"}`}>
+                    {isPositiveGain ? "+" : ""}{apyDifference.toFixed(1)}% APY
+                </span>
             </div>
 
             {/* Asset Info */}
-            <div className="bg-surface rounded-xl p-4 mb-6">
+            <div className="bg-surface-elevated rounded-xl p-4 mb-5">
                 <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-foreground/60">Asset</span>
-                    <span className="font-bold">{asset.symbol}</span>
+                    <span className="text-sm text-text-muted">Asset</span>
+                    <span className="font-semibold text-foreground">{asset.symbol}</span>
                 </div>
                 <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-foreground/60">Amount</span>
-                    <span className="font-mono">{asset.amount}</span>
+                    <span className="text-sm text-text-muted">Amount</span>
+                    <span className="font-mono text-foreground">{asset.amount}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                    <span className="text-sm text-foreground/60">Value</span>
-                    <span className="text-secondary">{asset.valueUsd}</span>
+                    <span className="text-sm text-text-muted">Value</span>
+                    <span className="font-semibold text-primary">{asset.valueUsd}</span>
                 </div>
             </div>
 
             {/* APY Comparison */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="text-center">
-                    <p className="text-sm text-foreground/60 mb-1">{sourceProtocol.name}</p>
-                    <p className="text-xl font-bold" style={{ color: sourceProtocol.color }}>
-                        {sourceApy.toFixed(2)}%
+            <div className="grid grid-cols-2 gap-3 mb-5">
+                <div className="text-center p-3 bg-surface-elevated rounded-xl">
+                    <p className="text-xs text-text-muted mb-1">{sourceProtocol.name}</p>
+                    <p className="text-lg font-bold" style={{ color: sourceProtocol.color }}>
+                        {sourceApy.toFixed(1)}%
                     </p>
-                    <p className="text-xs text-foreground/40">Current APY</p>
+                    <p className="text-xs text-text-muted">Current</p>
                 </div>
-                <div className="text-center">
-                    <p className="text-sm text-foreground/60 mb-1">{targetProtocol.name}</p>
-                    <p className="text-xl font-bold" style={{ color: targetProtocol.color }}>
-                        {targetApy.toFixed(2)}%
+                <div className="text-center p-3 bg-surface-elevated rounded-xl">
+                    <p className="text-xs text-text-muted mb-1">{targetProtocol.name}</p>
+                    <p className="text-lg font-bold" style={{ color: targetProtocol.color }}>
+                        {targetApy.toFixed(1)}%
                     </p>
-                    <p className="text-xs text-foreground/40">Target APY</p>
+                    <p className="text-xs text-text-muted">Target</p>
                 </div>
             </div>
 
@@ -119,13 +120,9 @@ export function MigrationCard({
             <motion.button
                 onClick={onMigrate}
                 disabled={isLoading}
-                className="w-full py-4 px-6 rounded-xl font-bold text-lg
-                   bg-gradient-to-r from-primary to-secondary
-                   hover:from-primary-hover hover:to-secondary-hover
-                   disabled:opacity-50 disabled:cursor-not-allowed
-                   transition-all duration-200"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                className="btn-primary w-full"
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
             >
                 {isLoading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -138,7 +135,7 @@ export function MigrationCard({
                         Migrating...
                     </span>
                 ) : (
-                    "🦬 Migrate to " + targetProtocol.name
+                    `Migrate to ${targetProtocol.name}`
                 )}
             </motion.button>
         </motion.div>
