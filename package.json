@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@cetusprotocol/cetus-sui-clmm-sdk": "^5.4.0",
+    "@magmaprotocol/magma-clmm-sdk": "^0.6.0",
     "@mysten/dapp-kit": "^0.20.0",
     "@mysten/sui": "^1.45.2",
     "@mysten/zklogin": "^0.8.1",

@@ -4,6 +4,7 @@ import { useSuiClient } from "@mysten/dapp-kit";
 import { useQuery } from "@tanstack/react-query";
 import { createNaviClient } from "../protocols/navi-client";
 import { createScallopClient } from "../protocols/scallop-client";
+import { createMagmaClient } from "../protocols/magma-client";
 import { PROTOCOLS, type ProtocolKey } from "../protocols/constants";
 
 /**
@@ -50,11 +51,13 @@ export function useProtocolApys() {
             // Create protocol clients
             const naviClient = createNaviClient(suiClient, "mainnet");
             const scallopClient = createScallopClient(suiClient);
+            const magmaClient = createMagmaClient(suiClient);
 
-            // Fetch APYs from both protocols in parallel
-            const [naviApys, scallopApys] = await Promise.allSettled([
+            // Fetch APYs from all protocols in parallel
+            const [naviApys, scallopApys, magmaApys] = await Promise.allSettled([
                 naviClient.getApys(),
                 scallopClient.getApys(),
+                magmaClient.getApys(),
             ]);
 
             // Build protocol-specific data
@@ -77,6 +80,18 @@ export function useProtocolApys() {
                     protocol: "SCALLOP",
                     protocolName: PROTOCOLS.SCALLOP.name,
                     coins: Object.entries(scallopApys.value).map(([coin, data]) => ({
+                        coin,
+                        supplyApy: data.supplyApy * 100,
+                        borrowApy: data.borrowApy * 100,
+                    })),
+                });
+            }
+
+            if (magmaApys.status === "fulfilled") {
+                byProtocol.push({
+                    protocol: "MAGMA",
+                    protocolName: PROTOCOLS.MAGMA.name,
+                    coins: Object.entries(magmaApys.value).map(([coin, data]) => ({
                         coin,
                         supplyApy: data.supplyApy * 100,
                         borrowApy: data.borrowApy * 100,

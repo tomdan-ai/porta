@@ -94,27 +94,28 @@ export default function Dashboard() {
   // Real data hooks
   const { data: positions, isLoading: positionsLoading, error: positionsError } = useUserPositions();
   const { data: apyData } = useProtocolApys();
+  const { data: migrationOpportunities } = useMigrationOpportunities();
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [isMigrating, setIsMigrating] = useState<string | null>(null);
 
-  const handleMigrate = async (position: ProtocolPosition, targetProtocol: string) => {
+  const handleMigrate = async (opp: any) => {
     if (!account) {
       alert("Please connect your wallet first!");
       return;
     }
 
-    const positionId = position.id;
+    const positionId = opp.id;
     setIsMigrating(positionId);
 
     try {
-      const route = `${position.protocol.toLowerCase()}-to-${targetProtocol.toLowerCase()}` as MigrationRoute;
+      const route = opp.route as MigrationRoute;
 
       const builder = createMigrationBuilder(suiClient);
       const tx = await builder.build({
-        amount: position.supplied,
-        coin: position.coin,
-        coinType: position.coinType,
+        amount: opp.supplied,
+        coin: opp.coin,
+        coinType: opp.coinType,
         route,
         senderAddress: account.address,
       });
@@ -222,33 +223,40 @@ export default function Dashboard() {
             <EmptyState />
           )}
 
-          {/* Positions Grid */}
-          {account && !positionsLoading && positions && positions.length > 0 && (
+          {/* Migration Opportunities Grid */}
+          {account && !positionsLoading && migrationOpportunities && migrationOpportunities.length > 0 && (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 justify-items-center">
-              {positions.filter(p => p.supplied > 0n).map((position, index) => {
-                const targetProtocol = getTargetProtocol(position.protocol);
-                const sourceApy = position.supplyApy;
-                const targetApy = getApy(targetProtocol, position.coin);
+              {migrationOpportunities.map((opp: any, index: number) => {
+                const sourceApy = opp.supplyApy * 100; // Convert to percentage
+                const targetApy = opp.targetApy || opp.supplyApy * 100;
 
                 return (
                   <motion.div
-                    key={position.id}
+                    key={`${opp.id}-${opp.targetProtocol}`}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
                   >
                     <MigrationCard
-                      sourceProtocol={PROTOCOLS[position.protocol]}
-                      targetProtocol={PROTOCOLS[targetProtocol]}
+                      sourceProtocol={{
+                        name: opp.protocolName,
+                        logo: opp.protocolLogo,
+                        color: opp.protocolColor,
+                      }}
+                      targetProtocol={{
+                        name: opp.targetProtocolName,
+                        logo: PROTOCOLS[opp.targetProtocol as keyof typeof PROTOCOLS].logo,
+                        color: opp.targetProtocolColor,
+                      }}
                       asset={{
-                        symbol: position.coin,
-                        amount: position.suppliedFormatted,
-                        valueUsd: `$${position.suppliedUsd.toFixed(2)}`,
+                        symbol: opp.targetCoin || opp.coin,
+                        amount: opp.suppliedFormatted,
+                        valueUsd: `$${opp.suppliedUsd.toFixed(2)}`,
                       }}
                       sourceApy={sourceApy}
                       targetApy={targetApy}
-                      onMigrate={() => handleMigrate(position, targetProtocol)}
-                      isLoading={isMigrating === position.id}
+                      onMigrate={() => handleMigrate(opp)}
+                      isLoading={isMigrating === opp.id}
                     />
                   </motion.div>
                 );

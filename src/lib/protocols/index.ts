@@ -27,12 +27,19 @@ export {
     type ScallopPoolInfo,
 } from "./scallop-client";
 
+// Magma Finance
+export {
+    MagmaClient,
+    createMagmaClient,
+    type MagmaPosition,
+} from "./magma-client";
+
 // Protocol metadata (names, colors, logos)
 export { PROTOCOLS, COIN_TYPES } from "./constants";
 
 // Unified types for cross-protocol operations
 export interface UnifiedPosition {
-    protocol: "NAVI" | "SCALLOP";
+    protocol: "NAVI" | "SCALLOP" | "MAGMA";
     coin: string;
     coinType: string;
     supplied: bigint;
@@ -45,7 +52,7 @@ export interface UnifiedPosition {
 }
 
 export interface ProtocolApys {
-    protocol: "NAVI" | "SCALLOP";
+    protocol: "NAVI" | "SCALLOP" | "MAGMA";
     coin: string;
     supplyApy: number;
     borrowApy: number;

@@ -2,6 +2,7 @@ import { Transaction } from "@mysten/sui/transactions";
 import { SuiClient } from "@mysten/sui/client";
 import { createNaviClient, type NaviCoin } from "../protocols/navi-client";
 import { createScallopClient, type ScallopCoin, SCALLOP_COINS } from "../protocols/scallop-client";
+import { createCetusSwapHelper } from "../protocols/cetus-swap";
 import { COIN_TYPES, getCoinDecimals } from "../protocols/constants";
 
 export type MigrationRoute =
@@ -36,11 +37,13 @@ export class MigrationBuilder {
     private suiClient: SuiClient;
     private naviClient: ReturnType<typeof createNaviClient>;
     private scallopClient: ReturnType<typeof createScallopClient>;
+    private cetusSwapHelper: ReturnType<typeof createCetusSwapHelper>;
 
     constructor(suiClient: SuiClient) {
         this.suiClient = suiClient;
         this.naviClient = createNaviClient(suiClient, "mainnet");
         this.scallopClient = createScallopClient(suiClient);
+        this.cetusSwapHelper = createCetusSwapHelper(suiClient);
     }
 
     /**
@@ -128,6 +131,139 @@ export class MigrationBuilder {
     }
 
     /**
+     * Build a migration from Navi to Magma (lending to liquidity)
+     * Steps:
+     * 1. Withdraw from Navi
+     * 2. Split the withdrawn amount in half
+     * 3. Swap half for the pair coin using Cetus
+     * 4. Add liquidity to Magma with both coins
+     */
+    async buildNaviToMagma(
+        coin: string,
+        amount: bigint,
+        senderAddress: string,
+    ): Promise<Transaction> {
+        const tx = new Transaction();
+        tx.setSender(senderAddress);
+
+        const coinType = COIN_TYPES[coin as keyof typeof COIN_TYPES] || COIN_TYPES.SUI;
+
+        // Step 1: Withdraw from Navi
+        const [withdrawnCoin] = tx.moveCall({
+            target: "0xa99b8952d4f7d947ea77fe0ecdcc9e5fc0bcab2841d6e2a5aa00c3044e5544b5::lending::withdraw",
+            arguments: [tx.pure.u64(amount.toString())],
+            typeArguments: [coinType],
+        });
+
+        // Step 2: Split the withdrawn coin in half
+        const halfAmount = amount / 2n;
+        const [halfCoin] = tx.splitCoins(withdrawnCoin, [tx.pure.u64(halfAmount.toString())]);
+
+        // Step 3: Determine pair coin and swap
+        let pairCoinType: string;
+        if (coin === "SUI") {
+            pairCoinType = COIN_TYPES.USDC;
+        } else if (coin === "USDC") {
+            pairCoinType = COIN_TYPES.SUI;
+        } else {
+            throw new Error(`Unsupported coin for Magma migration: ${coin}`);
+        }
+
+        const swappedCoin = await this.cetusSwapHelper.buildSwapCall(tx, halfCoin, {
+            coinTypeIn: coinType,
+            coinTypeOut: pairCoinType,
+            amountIn: halfAmount,
+            slippageTolerance: 0.01,
+        });
+
+        // Step 4: Add liquidity to Magma
+        const [coinA, coinB, typeA, typeB] = coinType < pairCoinType
+            ? [withdrawnCoin, swappedCoin, coinType, pairCoinType]
+            : [swappedCoin, withdrawnCoin, pairCoinType, coinType];
+
+        tx.moveCall({
+            target: "0x<MAGMA_PACKAGE>::pool::add_liquidity",
+            arguments: [
+                tx.object("0x<MAGMA_GLOBAL_CONFIG>"),
+                tx.object("0x<MAGMA_SUI_USDC_POOL>"),
+                coinA,
+                coinB,
+                tx.pure.u64(halfAmount.toString()),
+                tx.pure.u64(halfAmount.toString()),
+                tx.pure.u64("0"),
+                tx.pure.u64("0"),
+                tx.object("0x6"),
+            ],
+            typeArguments: [typeA, typeB],
+        });
+
+        return tx;
+    }
+
+    /**
+     * Build a migration from Scallop to Magma (lending to liquidity)
+     */
+    async buildScallopToMagma(
+        coin: string,
+        amount: bigint,
+        senderAddress: string,
+    ): Promise<Transaction> {
+        const tx = new Transaction();
+        tx.setSender(senderAddress);
+
+        const coinType = COIN_TYPES[coin as keyof typeof COIN_TYPES] || COIN_TYPES.SUI;
+
+        // Step 1: Withdraw from Scallop
+        const [withdrawnCoin] = tx.moveCall({
+            target: "0xefe8b36d5b2e43728cc323298626b83177803521d195cfb11e15b910e892fddf::withdraw::withdraw",
+            arguments: [tx.pure.u64(amount.toString())],
+            typeArguments: [coinType],
+        });
+
+        // Step 2: Split and swap
+        const halfAmount = amount / 2n;
+        const [halfCoin] = tx.splitCoins(withdrawnCoin, [tx.pure.u64(halfAmount.toString())]);
+
+        let pairCoinType: string;
+        if (coin === "SUI") {
+            pairCoinType = COIN_TYPES.USDC;
+        } else if (coin === "USDC") {
+            pairCoinType = COIN_TYPES.SUI;
+        } else {
+            throw new Error(`Unsupported coin for Magma migration: ${coin}`);
+        }
+
+        const swappedCoin = await this.cetusSwapHelper.buildSwapCall(tx, halfCoin, {
+            coinTypeIn: coinType,
+            coinTypeOut: pairCoinType,
+            amountIn: halfAmount,
+            slippageTolerance: 0.01,
+        });
+
+        const [coinA, coinB, typeA, typeB] = coinType < pairCoinType
+            ? [withdrawnCoin, swappedCoin, coinType, pairCoinType]
+            : [swappedCoin, withdrawnCoin, pairCoinType, coinType];
+
+        tx.moveCall({
+            target: "0x<MAGMA_PACKAGE>::pool::add_liquidity",
+            arguments: [
+                tx.object("0x<MAGMA_GLOBAL_CONFIG>"),
+                tx.object("0x<MAGMA_SUI_USDC_POOL>"),
+                coinA,
+                coinB,
+                tx.pure.u64(halfAmount.toString()),
+                tx.pure.u64(halfAmount.toString()),
+                tx.pure.u64("0"),
+                tx.pure.u64("0"),
+                tx.object("0x6"),
+            ],
+            typeArguments: [typeA, typeB],
+        });
+
+        return tx;
+    }
+
+    /**
      * Build any migration route
      */
     async build(params: MigrationParams): Promise<Transaction> {
@@ -137,9 +273,9 @@ export class MigrationBuilder {
             case "scallop-to-navi":
                 return this.buildScallopToNavi(params.coin, params.amount, params.senderAddress);
             case "navi-to-magma":
-                throw new Error("Magma migrations require LP token handling - coming soon");
+                return this.buildNaviToMagma(params.coin, params.amount, params.senderAddress);
             case "scallop-to-magma":
-                throw new Error("Magma migrations require LP token handling - coming soon");
+                return this.buildScallopToMagma(params.coin, params.amount, params.senderAddress);
             default:
                 throw new Error(`Unsupported migration route: ${params.route}`);
         }
