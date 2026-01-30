@@ -238,16 +238,8 @@ export default function Dashboard() {
                     transition={{ delay: index * 0.1 }}
                   >
                     <MigrationCard
-                      sourceProtocol={{
-                        name: opp.protocolName,
-                        logo: opp.protocolLogo,
-                        color: opp.protocolColor,
-                      }}
-                      targetProtocol={{
-                        name: opp.targetProtocolName,
-                        logo: PROTOCOLS[opp.targetProtocol as keyof typeof PROTOCOLS].logo,
-                        color: opp.targetProtocolColor,
-                      }}
+                      sourceProtocol={PROTOCOLS[opp.protocol as keyof typeof PROTOCOLS]}
+                      targetProtocol={PROTOCOLS[opp.targetProtocol as keyof typeof PROTOCOLS]}
                       asset={{
                         symbol: opp.targetCoin || opp.coin,
                         amount: opp.suppliedFormatted,

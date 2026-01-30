@@ -254,10 +254,11 @@ export function useMigrationOpportunities() {
                 // Option 2: Migrate to Magma LP (if coin is SUI or USDC)
                 if (pos.coin === "SUI" || pos.coin === "USDC") {
                     const magmaApy = 15.0; // Placeholder - should get from apyData
-                    const apyImprovement = magmaApy - pos.supplyApy * 100;
+                    const currentApyPercent = pos.supplyApy * 100;
+                    const apyImprovement = magmaApy - currentApyPercent;
 
-                    // Only suggest if APY improvement is significant (> 5%)
-                    if (apyImprovement > 5.0) {
+                    // Suggest if there's any improvement
+                    if (apyImprovement > 0.1) {
                         ops.push({
                             ...pos,
                             targetProtocol: "MAGMA",

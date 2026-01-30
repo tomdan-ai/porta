@@ -34,16 +34,18 @@ export function Header() {
                             Dashboard
                         </Link>
                         <Link
-                            href="/migrate"
-                            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-primary hover:bg-primary-light rounded-lg transition-all"
+                            href="/"
+                            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-primary hover:bg-primary-light rounded-lg transition-all opacity-50 cursor-not-allowed"
+                            title="Coming Soon"
                         >
-                            Migrate
+                            Migrate (Soon)
                         </Link>
                         <Link
-                            href="/history"
-                            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-primary hover:bg-primary-light rounded-lg transition-all"
+                            href="/"
+                            className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-primary hover:bg-primary-light rounded-lg transition-all opacity-50 cursor-not-allowed"
+                            title="Coming Soon"
                         >
-                            History
+                            History (Soon)
                         </Link>
                     </nav>
 
