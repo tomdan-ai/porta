@@ -122,33 +122,68 @@ export class ScallopClient {
 
     /**
      * Get user positions in Scallop Protocol
+     * Returns empty array gracefully on any error (SDK initialization, network issues, etc.)
      */
     async getUserPositions(address: string): Promise<ScallopPosition[]> {
         try {
-            await this.initialize();
-            if (!this.scallopQuery) throw new Error("ScallopQuery not initialized");
+            // Wrap initialization in a timeout to prevent hanging
+            const initWithTimeout = Promise.race([
+                this.initialize(),
+                new Promise<void>((_, reject) =>
+                    setTimeout(() => reject(new Error("Scallop SDK initialization timeout")), 10000)
+                )
+            ]);
+
+            await initWithTimeout;
+
+            if (!this.scallopQuery) {
+                console.warn("Scallop: ScallopQuery not initialized, returning empty positions");
+                return [];
+            }
 
             const positions: ScallopPosition[] = [];
 
-            // Get user's lending positions - first param is array of coin names
+            // Get user's lending positions with timeout protection
             const coinNames = Object.values(SCALLOP_COINS);
-            const lendings = await this.scallopQuery.getLendings(coinNames, address);
 
-            // Get user's obligations (borrowed assets)
-            const obligations = await this.scallopQuery.getObligations(address);
+            let lendings: Record<string, unknown> | null = null;
+            let obligations: unknown[] = [];
+
+            try {
+                lendings = await Promise.race([
+                    this.scallopQuery.getLendings(coinNames, address),
+                    new Promise<null>((_, reject) =>
+                        setTimeout(() => reject(new Error("getLendings timeout")), 8000)
+                    )
+                ]) as Record<string, unknown> | null;
+            } catch (lendingError) {
+                console.warn("Scallop: Failed to get lendings, continuing without:", lendingError);
+            }
+
+            try {
+                obligations = await Promise.race([
+                    this.scallopQuery.getObligations(address),
+                    new Promise<never[]>((resolve) => setTimeout(() => resolve([]), 8000))
+                ]) as unknown[];
+            } catch (obligationError) {
+                console.warn("Scallop: Failed to get obligations, continuing without:", obligationError);
+            }
+
+            // If we couldn't get any data, return empty
+            if (!lendings && obligations.length === 0) {
+                return [];
+            }
 
             // Process lending positions
             for (const [coinKey, coinName] of Object.entries(SCALLOP_COINS)) {
                 try {
-                    const lendingData = lendings?.[coinName];
-                    const lendingAmount = lendingData?.suppliedAmount || 0;
+                    const lendingData = lendings?.[coinName] as Record<string, unknown> | undefined;
+                    const lendingAmount = Number(lendingData?.suppliedAmount || 0);
                     let borrowAmount = 0;
 
                     // Check obligations for borrowed amounts
                     if (obligations && obligations.length > 0) {
                         for (const obligation of obligations) {
-                            // Get the obligation details using queryObligation if needed
-                            // For now, check if there's debt info directly
                             const obligationData = obligation as unknown as Record<string, unknown>;
                             const debts = obligationData.debts as Array<{ coinName: string; amount?: number }> | undefined;
                             if (debts) {
@@ -162,7 +197,7 @@ export class ScallopClient {
 
                     if (lendingAmount > 0 || borrowAmount > 0) {
                         const decimals = this.getDecimals(coinKey as ScallopCoin);
-                        const price = lendingData?.coinPrice || 0;
+                        const price = Number(lendingData?.coinPrice || 0);
 
                         positions.push({
                             coin: coinKey as ScallopCoin,
@@ -171,19 +206,21 @@ export class ScallopClient {
                             suppliedUsd: lendingAmount * price,
                             borrowed: BigInt(Math.floor(borrowAmount * Math.pow(10, decimals))),
                             borrowedUsd: borrowAmount * price,
-                            supplyApy: lendingData?.supplyApy || 0,
-                            borrowApy: 0, // Would need to get from pool data
+                            supplyApy: Number(lendingData?.supplyApy || 0),
+                            borrowApy: 0,
                             decimals,
                         });
                     }
                 } catch (error) {
-                    console.debug(`No Scallop position for ${coinName}:`, error);
+                    // Silently continue - individual coin parsing errors are expected
                 }
             }
 
             return positions;
         } catch (error) {
-            console.error("Failed to get Scallop user positions:", error);
+            // Log but don't throw - always return gracefully
+            console.warn("Scallop: getUserPositions failed, returning empty array:",
+                error instanceof Error ? error.message : "Unknown error");
             return [];
         }
     }
