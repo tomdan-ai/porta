@@ -120,16 +120,39 @@ export class NaviClient {
 
     /**
      * Get user positions in Navi Protocol
+     * Returns empty array gracefully on any error
      */
     async getUserPositions(address: string): Promise<NaviPosition[]> {
         try {
-            const client = await this.getClient();
+            // Wrap client initialization in timeout
+            const clientPromise = Promise.race([
+                this.getClient(),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("Navi SDK initialization timeout")), 10000)
+                )
+            ]);
+
+            const client = await clientPromise;
             const positions: NaviPosition[] = [];
 
-            // Get all portfolios for the connected accounts
-            // Note: This gets portfolios for the SDK's internal accounts, not arbitrary addresses
-            // For arbitrary address queries, we'll use pool info and calculate from on-chain data
-            const portfolios = await client.getAllNaviPortfolios();
+            // Get all portfolios with timeout protection
+            let portfolios: Map<string, { supplyBalance: number; borrowBalance: number }> | null = null;
+
+            try {
+                portfolios = await Promise.race([
+                    client.getAllNaviPortfolios(),
+                    new Promise<null>((_, reject) =>
+                        setTimeout(() => reject(new Error("getAllNaviPortfolios timeout")), 8000)
+                    )
+                ]) as Map<string, { supplyBalance: number; borrowBalance: number }> | null;
+            } catch (portfolioError) {
+                console.warn("Navi: Failed to get portfolios:", portfolioError);
+                return [];
+            }
+
+            if (!portfolios) {
+                return [];
+            }
 
             // Get pool info for prices and rates
             for (const [coinKey] of Object.entries(NAVI_COINS)) {
@@ -141,10 +164,20 @@ export class NaviClient {
                     const balance = portfolios.get(coinSymbol);
 
                     if (balance && (balance.supplyBalance > 0 || balance.borrowBalance > 0)) {
-                        // Get pool info for price and rates
-                        const poolInfo = await client.getPoolInfo(coinInfo);
-                        const info = poolInfo as Record<string, unknown>;
-                        const tokenPrice = Number(info.tokenPrice || 0);
+                        // Get pool info for price and rates (with timeout)
+                        let poolInfo: Record<string, unknown> = {};
+                        try {
+                            poolInfo = await Promise.race([
+                                client.getPoolInfo(coinInfo),
+                                new Promise<Record<string, unknown>>((resolve) =>
+                                    setTimeout(() => resolve({}), 5000)
+                                )
+                            ]) as Record<string, unknown>;
+                        } catch {
+                            // Continue without pool info
+                        }
+
+                        const tokenPrice = Number(poolInfo.tokenPrice || 0);
 
                         positions.push({
                             coin: coinKey as NaviCoin,
@@ -153,20 +186,20 @@ export class NaviClient {
                             suppliedUsd: balance.supplyBalance * tokenPrice,
                             borrowed: BigInt(Math.floor(balance.borrowBalance * Math.pow(10, this.getDecimals(coinKey as NaviCoin)))),
                             borrowedUsd: balance.borrowBalance * tokenPrice,
-                            supplyApy: parseFloat(String(info.base_supply_rate || info.boosted_supply_rate || 0)),
-                            borrowApy: parseFloat(String(info.base_borrow_rate || info.boosted_borrow_rate || 0)),
+                            supplyApy: parseFloat(String(poolInfo.base_supply_rate || poolInfo.boosted_supply_rate || 0)),
+                            borrowApy: parseFloat(String(poolInfo.base_borrow_rate || poolInfo.boosted_borrow_rate || 0)),
                             decimals: this.getDecimals(coinKey as NaviCoin),
                         });
                     }
                 } catch (error) {
-                    // User might not have position in this coin
-                    console.debug(`No Navi position for ${coinKey}:`, error);
+                    // Silently continue - individual coin errors are expected
                 }
             }
 
             return positions;
         } catch (error) {
-            console.error("Failed to get Navi user positions:", error);
+            console.warn("Navi: getUserPositions failed, returning empty array:",
+                error instanceof Error ? error.message : "Unknown error");
             return [];
         }
     }
