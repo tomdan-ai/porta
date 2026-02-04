@@ -8,7 +8,8 @@ import { MigrationCard } from "@/components/ui/migration-card";
 import { GasCalculator } from "@/components/ui/gas-calculator";
 import { PROTOCOLS } from "@/lib/protocols/constants";
 import { createMigrationBuilder, type MigrationRoute } from "@/lib/transaction-builder/migration-builder";
-import { useUserPositions, useMigrationOpportunities, type ProtocolPosition } from "@/lib/hooks/use-positions";
+import { useUserPositions, useMigrationOpportunities, useProtocolsOverview, type ProtocolPosition } from "@/lib/hooks/use-positions";
+import { ProtocolOverview } from "@/components/ui/protocol-overview";
 import { useProtocolApys } from "@/lib/hooks/use-protocol-apys";
 
 // Loading skeleton for migration cards
@@ -93,6 +94,7 @@ export default function Dashboard() {
 
   // Real data hooks
   const { data: positions, isLoading: positionsLoading, error: positionsError } = useUserPositions();
+  const { data: protocolsOverview, isLoading: overviewLoading } = useProtocolsOverview();
   const { data: apyData } = useProtocolApys();
   const { data: migrationOpportunities } = useMigrationOpportunities();
 
@@ -192,6 +194,18 @@ export default function Dashboard() {
           )}
         </div>
       </section>
+
+      {/* Protocol Overview Section */}
+      {account && (
+        <section className="py-4 px-4 overflow-hidden">
+          <div className="max-w-5xl mx-auto">
+            <ProtocolOverview
+              protocols={protocolsOverview || []}
+              isLoading={overviewLoading}
+            />
+          </div>
+        </section>
+      )}
 
       {/* Migration Cards Grid */}
       <section className="py-12 px-4">
