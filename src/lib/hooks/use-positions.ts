@@ -282,3 +282,90 @@ export function useMigrationOpportunities() {
         error,
     };
 }
+
+/**
+ * Hook to get a full overview of all protocols, including 0 balances
+ */
+export function useProtocolsOverview() {
+    const suiClient = useSuiClient();
+    const account = useCurrentAccount();
+
+    return useQuery({
+        queryKey: ["protocols-overview", account?.address],
+        queryFn: async () => {
+            if (!account?.address) return [];
+
+            // Create protocol clients
+            const naviClient = createNaviClient(suiClient, "mainnet");
+            const scallopClient = createScallopClient(suiClient);
+            const magmaClient = createMagmaClient(suiClient);
+
+            // Fetch positions from all protocols in parallel
+            const [naviPositions, scallopPositions, magmaPositions] = await Promise.allSettled([
+                naviClient.getUserPositions(account.address),
+                scallopClient.getUserPositions(account.address),
+                magmaClient.getUserPositions(account.address),
+            ]);
+
+            const overview: any[] = [];
+
+            // Process Navi
+            const naviData = naviPositions.status === "fulfilled" ? naviPositions.value : [];
+            overview.push({
+                ...PROTOCOLS.NAVI,
+                isConnected: true,
+                hasActivePositions: naviData.some(p => p.supplied > 0n || p.borrowed > 0n),
+                balances: PROTOCOLS.NAVI.supportedCoins.map(coin => {
+                    const pos = naviData.find(p => p.coin === coin);
+                    return {
+                        coin,
+                        supplied: pos?.supplied || 0n,
+                        borrowed: pos?.borrowed || 0n,
+                        suppliedFormatted: formatAmount(pos?.supplied || 0n, pos?.decimals || 9),
+                        borrowedFormatted: formatAmount(pos?.borrowed || 0n, pos?.decimals || 9),
+                    };
+                }),
+            });
+
+            // Process Scallop
+            const scallopData = scallopPositions.status === "fulfilled" ? scallopPositions.value : [];
+            overview.push({
+                ...PROTOCOLS.SCALLOP,
+                isConnected: true,
+                hasActivePositions: scallopData.some(p => p.supplied > 0n || p.borrowed > 0n),
+                balances: PROTOCOLS.SCALLOP.supportedCoins.map(coin => {
+                    const pos = scallopData.find(p => p.coin === coin);
+                    return {
+                        coin,
+                        supplied: pos?.supplied || 0n,
+                        borrowed: pos?.borrowed || 0n,
+                        suppliedFormatted: formatAmount(pos?.supplied || 0n, pos?.decimals || 6),
+                        borrowedFormatted: formatAmount(pos?.borrowed || 0n, pos?.decimals || 6),
+                    };
+                }),
+            });
+
+            // Process Magma
+            const magmaData = magmaPositions.status === "fulfilled" ? magmaPositions.value : [];
+            overview.push({
+                ...PROTOCOLS.MAGMA,
+                isConnected: magmaData.length > 0,
+                hasActivePositions: magmaData.some(p => p.supplied > 0n),
+                balances: PROTOCOLS.MAGMA.supportedCoins.map(coin => {
+                    const pos = magmaData.find(p => p.coin.includes(coin));
+                    return {
+                        coin,
+                        supplied: pos?.supplied || 0n,
+                        borrowed: 0n,
+                        suppliedFormatted: formatAmount(pos?.supplied || 0n, pos?.decimals || 9),
+                        borrowedFormatted: "0.00",
+                    };
+                }),
+            });
+
+            return overview;
+        },
+        enabled: !!account?.address,
+        staleTime: 30_000,
+    });
+}
